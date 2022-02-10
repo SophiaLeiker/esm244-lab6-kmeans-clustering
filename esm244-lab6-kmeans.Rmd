@@ -1,0 +1,50 @@
+---
+title: 'Lab 6: K Means/hierarchical clustering'
+author: "Sophia Leiker"
+date: "2/10/2022"
+output: html_document
+---
+
+```{r setup, include=TRUE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(palmerpenguins)
+library(NbClust)
+library(cluster)
+library(factoextra)
+library(dendextend)
+library(ggdendro)
+```
+
+## Part 1. K-means clustering: 
+
+To practice k-means clustering, we'll use the `penguins` dataset from `palmerpenguins`. 
+
+### Exploratory visualization
+
+First, do some exploratory data visualization, mapping species onto point color. Does it look like there is an opportunity to cluster by species? 
+
+```{r}
+# Vill length versus depth exploratory plot:
+ggplot(penguins) +
+  geom_point(aes(x = bill_length_mm, 
+                 y = bill_depth_mm, 
+                 color = species,
+                 shape = sex),
+             size = 3,
+             alpha = 0.7) +
+  scale_color_manual(values = c("orange","cyan4","darkmagenta"))
+
+# Flipper length versus body mass exploratory plot: 
+ggplot(penguins) +
+  geom_point(aes(x = flipper_length_mm, 
+                 y = body_mass_g, 
+                 color = species,
+                 shape = sex),
+             size = 3,
+             alpha = 0.7) +
+  scale_color_manual(values = c("orange","cyan4","darkmagenta"))
+```
+
+
