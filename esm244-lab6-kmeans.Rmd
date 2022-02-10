@@ -33,7 +33,7 @@ ggplot(penguins) +
                  color = species,
                  shape = sex),
              size = 3,
-             alpha = 0.7) +
+             alpha = 0.7) + #this is for transparency
   scale_color_manual(values = c("orange","cyan4","darkmagenta"))
 
 # Flipper length versus body mass exploratory plot: 
@@ -43,8 +43,131 @@ ggplot(penguins) +
                  color = species,
                  shape = sex),
              size = 3,
-             alpha = 0.7) +
+             alpha = 0.7) + #alpha is transparency
   scale_color_manual(values = c("orange","cyan4","darkmagenta"))
+```
+
+```{r}
+summary(penguins)
+# we are looking at the variables in the clustering length (32-59), depth (13-21), legnth(172-231), body mass (2700-6300)
+#These are all on different scales, if we were to do this with k means right now we would be focusing just on body mass because that is the one with the widest spread. We need to rescale these in order for a more accurate analysis to take place
+```
+
+
+
+#### Pick the number of clusters
+
+In the Week 8 lecture, you learned that for k-means clustering you need to specify the number of clusters *a priori*. R **does** have some tools to help you decide, but this should NOT override your judgement based on conceptual or expert understanding. 
+
+Here, we use the `NbClust::NbClust()` function, which "provides 30 indices for determining the number of clusters and proposes to user the best clustering scheme from the different results obtained by varying all combinations of number of clusters, distance measures, and clustering methods". See `?NbClust` for more information. 
+
+Basically, it's going to run 30 different ways of evaluating how many clusters it *thinks* exist, then tell you the breakdown of what they decide (e.g. "8 algorithms think that there should be 4 clusters"). 
+
+### Create a complete, scaled version of the data
+
+We are going to do this with *complete cases* - in other words, for the variables we're using to perform k-means clustering on penguins (bill length, bill depth, flipper length, body mass), we are *dropping any observation (row) where any of those are missing*. Keep in mind that this may not be the best option for every scenario - in other cases (e.g. when we have a large proportion of missingness), we may want to impute missing values instead.
+
+```{r}
+# Drop rows where any of the four size measurements are missing
+penguins_complete <- penguins %>% 
+  drop_na(bill_length_mm, bill_depth_mm, body_mass_g, flipper_length_mm)
+
+# Only keep the columns for the fours size measurements, then SCALE them
+penguins_scale <- penguins_complete %>% 
+  select(ends_with("mm"), ends_with("_g")) %>% 
+  scale() # See ?scale for details on scaling 
+
+summary(penguins_scale)
+```
+
+#### identifying optimal number of clusters
+
+Note that we're only using the four structural size measurement variables from `penguins`, which are columns 3 through 6 (hence the `penguins[3:6]` here). We also specify the minimum and maximum number of clusters we want `NbClust` to consider:
+
+```{r}
+# How many clusters do you THINK there should be?
+number_est <- NbClust(penguins_scale, min.nc = 2, max.nc = 10, method = "kmeans")
+
+#check out the results (just look at first summary report)
+number_est
+
+# By these estimators, 3 is identified as the best number of clusters by the largest number of algorithms (11 / 24)...  could we override this?  here I think it makes sense to stick with 3 (a cluster for each species) and see how it does. 
+
+## Knee method
+fviz_nbclust(penguins_scale, FUNcluster = kmeans, method = 'wss', k.max = 10)
+```
+
+We're going to use 3 clusters and see how it does, though there may be a case here for 2 given that Adelie & chinstrap penguins are pretty similar. 
+
+### Run k-means
+
+Now that we have complete, scaled data for the four size variables of interest, let's run k-means. You should know the iterative process it's running through from the Week 6 lecture. 
+
+```{r}
+penguins_km <- kmeans(penguins_scale, 3, nstart = 25) #kmeans specifying 3 groups to start (this is going to plot 3 centroids randomly 25 times )
+
+penguins_km #this gives a summary of the output
+```
+
+```{r}
+# See what it returns (different elements returned by kmeans function):
+penguins_km$size # how many observations assigned to each cluster
+penguins_km$cluster #what cluster each observation in penguins scale is assigned to... cluster 1 is centered at bill length of .66, depth .81. Cluster 2 is centered at legth -1.04, depth .485
+
+# Bind the cluster number to the original data used for clustering, so that we can see what cluster each penguin is assigned to
+penguins_cl <- data.frame(penguins_complete, cluster_no = factor(penguins_km$cluster)) #so this adds a column for cluster number
+```
+
+```{r}
+# Plot flipper length versus body mass, indicating which cluster each penguin is assigned to (but also showing the actual species):
+ggplot(penguins_cl) +
+  geom_point(aes(x = flipper_length_mm, 
+                 y = body_mass_g, 
+                 color = cluster_no,
+                 shape = species))
+ 
+
+ggplot(penguins_cl) +
+  geom_point(aes(x = bill_depth_mm, 
+                 y = body_mass_g, 
+                 color = cluster_no,
+                 shape = species))
+
+ggplot(penguins_cl) +
+  geom_point(aes(x = bill_length_mm, 
+                 y = body_mass_g, 
+                 color = cluster_no,
+                 shape = species))
+
+#What do we see from this graph? We see that a lot of gentoos are in Cluster 3, a lot of Adelies are in Cluster 2, and A lot of chinstraps are in Cluster 1...but what are the actual counts? Let's find them:
+
+
+### how well does this clustering match up to species?  Select the species and cluster number vars and make into a continency table
+
+penguins_cl %>% select(species, cluster_no) %>%  table()
+
+```
+
+Takeaway: as we see from the graph, *most* chinstraps in Cluster 1, and *most* Adelies in Cluster 2, and *all* Gentoos are in Cluster 3 by k-means clustering. So this actually does a somewhat decent job of splitting up the three species into different clusters, with some overlap in Cluster 1 between Adelies & chinstraps, which is consistent with what we observed in exploratory data visualization.
+
+## Part 2. Cluster analysis: hierarchical
+
+In this section, you'll be performing hierarchical cluster analysis (& making dendrograms) in R. From lecture this week, you should hopefully understand agglomerative versus divisive clustering, as well as differences in linkages (complete, single, average). 
+
+We will use the `stats::hclust()` function for agglomerative hierarchical clustering, first checking how well our clusters compare to using WorldBank environmental data (simplified), wb_env.csv.
+
+### Compare hclust results to kmeans using penguins
+Start with complete linkage.. first step, create a Euclidean distance matrix
+```{r}
+peng_dist <- dist(penguins_scale, method = 'euclidean') 
+   ### also look at upper and diag arguments
+ 
+### Hierarchical clustering (complete linkage)
+peng_hc_complete <- hclust(peng_dist, method = "complete")
+ 
+### Plot it (base plot):
+plot(peng_hc_complete, cex = 0.6, hang = -1)
+
 ```
 
 
