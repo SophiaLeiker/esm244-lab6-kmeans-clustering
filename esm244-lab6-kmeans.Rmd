@@ -15,6 +15,7 @@ library(cluster)
 library(factoextra)
 library(dendextend)
 library(ggdendro)
+library(here)
 ```
 
 ## Part 1. K-means clustering: 
@@ -163,6 +164,7 @@ peng_dist <- dist(penguins_scale, method = 'euclidean')
    ### also look at upper and diag arguments
  
 ### Hierarchical clustering (complete linkage)
+#giving it the distance matrix
 peng_hc_complete <- hclust(peng_dist, method = "complete")
  
 ### Plot it (base plot):
@@ -170,4 +172,130 @@ plot(peng_hc_complete, cex = 0.6, hang = -1)
 
 ```
 
+```{r}
+### use cutree to slice it into three clusters
+#using the cutree function, asking it to cut it into 3 clusters 
+peng_cut_hc <- cutree(peng_hc_complete, 3)
+table(peng_cut_hc, penguins_complete$species) #this is creating a table output comparing the peng_cut_hc to the penguins complete species column
 
+#trying another method
+peng_hc_single <- hclust(peng_dist, method = "single")
+peng_cut_hc_single <- cutree(peng_hc_single, 3)
+table(peng_cut_hc_single, penguins_complete$species)
+plot(peng_hc_single, cex = 0.6, hang = -1)
+#this ^^ one is bad! 
+```
+
+### World Bank data: Read in the data, & simplify
+
+Here, we'll read in the WorldBank environmental data (simplified), and keep only the top 20 GHG emitters for this dataset. 
+
+```{r}
+# Get the data
+wb_env <- read_csv(here("data", "wb_env.csv"))
+
+# Make sure to take a look at the data:
+# View(wb_env)
+ 
+# Only keep top 20 greenhouse gas emitters (for simplifying visualization here...)
+wb_ghg_20 <- wb_env %>% 
+  arrange(-ghg) %>% 
+  head(20)
+ 
+summary(wb_ghg_20)
+```
+
+#### Scale the data
+
+```{r}
+# Scale the numeric variables (columns 3:7)
+wb_scaled <- wb_ghg_20 %>% 
+  select(3:7) %>% 
+  scale()
+summary(wb_scaled) #so now ranges from min to max are in a good order
+
+#Update to add rownames (country name) from wb_ghg_20
+#this adds the rownames back in from the original dataset
+#You would not have been able to scale if you did have the characters (because you can't cluster based on character values)
+rownames(wb_scaled) <- wb_ghg_20$name
+
+# Check the outcome with View(wb_scaled) - see that the rownames are now the country rowname (this is useful for visualizing)
+```
+
+Great, now we have a simplified, scaled version of the numeric variables, with rownames containing the county name. 
+
+#### Find the Euclidean distances
+
+Use the `stats::dist()` function to find the Euclidean distance in multivariate space between the different observations (countries):
+
+```{r}
+# Compute dissimilarity values (Euclidean distances):
+euc_distance <- dist(wb_scaled, method = "euclidean") #add diag and upper #mirroring the data across the diagonal
+
+#Check the output
+#euc_distance
+```
+
+Note: so like you saw in lecture, you *could* manually create the dendrogram using those distances! But it would take a pretty long time, so instead...
+
+#### Perform hierarchical clustering by complete linkage with `stats::hclust()`
+
+The `stats::hclust()` function performs hierarchical clustering, given a dissimilarity matrix (our matrix of euclidean distances), using a linkage that you specify. 
+
+Here, let's use complete linkage (recall from lecture: clusters are merged by the smallest *maximum* distance between two observations in distinct clusters).
+
+```{r}
+# Hierarchical clustering (complete linkage)
+hc_complete <- hclust(euc_distance, method = "complete")
+
+#Plot it (base plot):
+plot(hc_complete, cex = 0.6, hang = -1)
+
+```
+
+### Now let's do it by single linkage & compare
+
+Let's update the linkage to single linkage (recall from lecture: this means that clusters are merged by the *smallest* distance between observations in separate clusters):
+
+```{r}
+# Hierarchical clustering (single linkage)
+hc_single <- hclust(euc_distance, method = "single" )
+ 
+# Plot it (base plot):
+plot(hc_single, cex = 0.6, hang = -1)
+```
+
+We see that it is a bit different when we change the linkage! But how different?
+
+#### Make a tanglegram to compare dendrograms 
+
+Let's make a **tanglegram** to compare clustering by complete and single linkage! We'll use the `dendextend::tanglegram()` function to make it. 
+
+First, we'll convert to class `dendrogram`, then combine them into a list:
+
+```{r}
+# Convert to class dendrogram 
+dend_complete <- as.dendrogram(hc_complete)
+dend_simple <- as.dendrogram(hc_single)
+```
+
+Make a tanglegram:
+```{r}
+#make a tanglegram
+tanglegram(dend_complete, dend_simple)
+```
+
+That allows us to compare how things are clustered by the different linkages!
+
+#### Want to plot your dendrogram with ggplot instead? Me too. 
+
+Here's how you can make your dendrogram with `ggplot` (here, I'll use the complete linkage example stored as `hc_complete`) using `ggdendrogram()`, a `ggplot` wrapper: 
+
+```{r}
+ggdendrogram(hc_complete,
+             rotate = TRUE) +
+  theme_minimal() +
+  labs(x = "Country")
+```
+
+### END TASK
